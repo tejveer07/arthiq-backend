@@ -42,6 +42,14 @@ public class JwtAuthenticationFilter extends UsernamePasswordAuthenticationFilte
         HttpServletRequest httpRequest = (HttpServletRequest) request;
         HttpServletResponse httpResponse = (HttpServletResponse) response;
 
+        String path = httpRequest.getRequestURI();
+
+        // Skip JWT validation for auth endpoints
+        if (path.startsWith("/api/auth/")) {
+            chain.doFilter(request, response);
+            return;
+        }
+
         try {
             String jwt = parseJwt(httpRequest);
             System.out.println("JWT Token received: " + jwt); // DEBUG

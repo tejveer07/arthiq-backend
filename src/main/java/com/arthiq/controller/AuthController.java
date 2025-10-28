@@ -52,7 +52,7 @@ public class AuthController {
         // Send OTP to email
         otpService.sendOtp(registerRequest.getEmail());
 
-        return ResponseEntity.ok("User registered. Please verify your email with the OTP sent.");
+        return ResponseEntity.ok("Please verify your email with the OTP sent.");
     }
 
     // Step 2: Verify OTP
@@ -83,7 +83,7 @@ public class AuthController {
     // Login (only for verified users)
     @PostMapping("/login")
     public ResponseEntity<?> authenticateUser(@RequestBody UserDto loginRequest) {
-        // Check if user is verified
+        // Check if user exists and is verified
         User user = userService.findByEmail(loginRequest.getEmail())
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
@@ -92,10 +92,11 @@ public class AuthController {
                     .body("Please verify your email before logging in");
         }
 
+        // Authenticate with email and raw password
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(
                         loginRequest.getEmail(),
-                        loginRequest.getEmail())); // Update with actual password field
+                        loginRequest.getPassword()));  // Use password from request
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
         String jwt = jwtUtil.generateJwtToken(loginRequest.getEmail());
@@ -105,6 +106,7 @@ public class AuthController {
 
         return ResponseEntity.ok(new JwtResponse(jwt, userDto));
     }
+
 
     // JWT Response DTO
     public static class JwtResponse {
