@@ -38,4 +38,8 @@ public class UserService {
         dto.setEmail(user.getEmail());
         return dto;
     }
+
+    public User save(User user) {
+        return userRepository.save(user);
+    }
 }

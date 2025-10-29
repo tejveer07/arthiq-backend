@@ -96,18 +96,43 @@ public class AuthController {
 
 
     // Step 2: Verify OTP
+//    @PostMapping("/verify-otp")
+//    public ResponseEntity<?> verifyOtp(@RequestBody OtpVerifyDto otpVerifyDto) {
+//        try {
+//            boolean verified = otpService.verifyOtp(otpVerifyDto.getEmail(), otpVerifyDto.getOtp());
+//            if (verified) {
+//                return ResponseEntity.ok("Email verified successfully. You can now login.");
+//            }
+//            return ResponseEntity.badRequest().body("Invalid OTP");
+//        } catch (RuntimeException e) {
+//            return ResponseEntity.badRequest().body(e.getMessage());
+//        }
+//    }
+
     @PostMapping("/verify-otp")
-    public ResponseEntity<?> verifyOtp(@RequestBody OtpVerifyDto otpVerifyDto) {
-        try {
-            boolean verified = otpService.verifyOtp(otpVerifyDto.getEmail(), otpVerifyDto.getOtp());
-            if (verified) {
-                return ResponseEntity.ok("Email verified successfully. You can now login.");
-            }
-            return ResponseEntity.badRequest().body("Invalid OTP");
-        } catch (RuntimeException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
+    public ResponseEntity<?> verifyOtp(@RequestBody OtpVerifyRequest otpRequest) {
+        String email = otpRequest.getEmail();
+        String otp = otpRequest.getOtp();
+
+        User user = userService.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        // Verify OTP
+        if (!otpService.verifyOtp(email, otp)) {
+            return ResponseEntity.badRequest().body("Invalid or expired OTP");
         }
+
+        // Mark user as verified
+        user.setVerified(true);
+        userService.save(user);
+
+        // Generate JWT token and return auth response (same as login)
+        String jwt = jwtUtil.generateJwtToken(email);
+        UserDto userDto = userService.convertToDto(user);
+
+        return ResponseEntity.ok(new JwtResponse(jwt, userDto));
     }
+
 
     // Resend OTP
     @PostMapping("/resend-otp")
