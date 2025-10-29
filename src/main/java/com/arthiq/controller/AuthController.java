@@ -14,6 +14,8 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Optional;
+
 @RestController
 @RequestMapping("/api/auth")
 public class AuthController {
@@ -34,14 +36,49 @@ public class AuthController {
     JwtUtil jwtUtil;
 
     // Step 1: Register user (sends OTP)
+//    @PostMapping("/register")
+//    public ResponseEntity<?> registerUser(@RequestBody RegisterRequestDto registerRequest) {
+//        // Check if email already exists
+//        if (userService.findByEmail(registerRequest.getEmail()).isPresent()) {
+//            return ResponseEntity.badRequest().body("Email already registered");
+//        }
+//
+//        // Create user with unverified status
+//        UserDto userDto = new UserDto();
+//        userDto.setName(registerRequest.getName());
+//        userDto.setEmail(registerRequest.getEmail());
+//
+//        String encodedPassword = passwordEncoder.encode(registerRequest.getPassword());
+//        UserDto newUser = userService.register(userDto, encodedPassword);
+//
+//        // Send OTP to email
+//        otpService.sendOtp(registerRequest.getEmail());
+//
+//        return ResponseEntity.ok("Please verify your email with the OTP sent.");
+//    }
+
     @PostMapping("/register")
     public ResponseEntity<?> registerUser(@RequestBody RegisterRequestDto registerRequest) {
-        // Check if email already exists
-        if (userService.findByEmail(registerRequest.getEmail()).isPresent()) {
-            return ResponseEntity.badRequest().body("Email already registered");
+        Optional<User> existingUser = userService.findByEmail(registerRequest.getEmail());
+
+        // Check if user exists and is verified
+        if (existingUser.isPresent()) {
+            if (existingUser.get().getVerified()) {
+                // User is verified - cannot re-register
+                return ResponseEntity.badRequest().body("Email already registered and verified. Please login.");
+            } else {
+                // User exists but not verified - resend OTP
+                try {
+                    otpService.sendOtp(registerRequest.getEmail());
+                    return ResponseEntity.ok("Account already exists but not verified. New OTP sent to your email.");
+                } catch (Exception e) {
+                    return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                            .body("Failed to resend OTP. Please try again.");
+                }
+            }
         }
 
-        // Create user with unverified status
+        // New user - proceed with registration
         UserDto userDto = new UserDto();
         userDto.setName(registerRequest.getName());
         userDto.setEmail(registerRequest.getEmail());
@@ -49,11 +86,14 @@ public class AuthController {
         String encodedPassword = passwordEncoder.encode(registerRequest.getPassword());
         UserDto newUser = userService.register(userDto, encodedPassword);
 
-        // Send OTP to email
-        otpService.sendOtp(registerRequest.getEmail());
-
-        return ResponseEntity.ok("Please verify your email with the OTP sent.");
+        try {
+            otpService.sendOtp(registerRequest.getEmail());
+            return ResponseEntity.ok("User registered. Please verify your email with the OTP sent.");
+        } catch (Exception e) {
+            return ResponseEntity.ok("User registered. Email service unavailable - please contact support.");
+        }
     }
+
 
     // Step 2: Verify OTP
     @PostMapping("/verify-otp")
