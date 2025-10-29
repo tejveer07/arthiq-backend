@@ -1,44 +1,37 @@
 package com.arthiq.service;
 
-import com.resend.Resend;
-import com.resend.services.emails.Emails;
-import com.resend.services.emails.model.CreateEmailOptions;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
 @Service
 public class EmailService {
 
-    // ✅ Load values from environment variables or application.properties
-    @Value("${RESEND_API_KEY:${RESEND_API_KEY_ENV:}}")
-    private String apiKey;
+    private final JavaMailSender mailSender;
 
-    @Value("${FROM_EMAIL:onboarding@resend.dev}")
+    @Value("${spring.mail.from}")
     private String fromEmail;
+
+    public EmailService(JavaMailSender mailSender) {
+        this.mailSender = mailSender;
+    }
 
     public void sendOtpEmail(String toEmail, String otp) {
         try {
-            if (apiKey == null || apiKey.isEmpty()) {
-                throw new IllegalStateException("RESEND_API_KEY is missing — set it in Render environment variables.");
-            }
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(fromEmail);
+            message.setTo(toEmail);
+            message.setSubject("arthIQ - Email Verification OTP");
+            message.setText(
+                    "Your OTP for email verification is: " + otp +
+                            "\n\nThis OTP is valid for 10 minutes." +
+                            "\n\nIf you didn't request this, please ignore this email." +
+                            "\n\nThanks,\narthIQ Team"
+            );
 
-            Resend resend = new Resend(apiKey);
-
-            CreateEmailOptions options = CreateEmailOptions.builder()
-                    .from(fromEmail)
-                    .to(toEmail)
-                    .subject("arthIQ - Email Verification OTP")
-                    .html("<p>Your OTP for email verification is: <b>" + otp + "</b></p>"
-                            + "<p>This OTP is valid for 10 minutes.<br>"
-                            + "If you didn’t request this, please ignore this email.</p>"
-                            + "<p>Thanks,<br>arthIQ Team</p>")
-                    .build();
-
-            Emails emails = resend.emails();
-            emails.send(options);
-
+            mailSender.send(message);
             System.out.println("✅ OTP email sent successfully to: " + toEmail);
-
         } catch (Exception e) {
             System.err.println("❌ Failed to send email: " + e.getMessage());
             throw new RuntimeException("Failed to send OTP email: " + e.getMessage());

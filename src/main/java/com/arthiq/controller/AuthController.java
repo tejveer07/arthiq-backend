@@ -81,31 +81,72 @@ public class AuthController {
     }
 
     // Login (only for verified users)
+//    @PostMapping("/login")
+//    public ResponseEntity<?> authenticateUser(@RequestBody UserDto loginRequest) {
+//        // Check if user exists and is verified
+//        User user = userService.findByEmail(loginRequest.getEmail())
+//                .orElseThrow(() -> new RuntimeException("User not found"));
+//
+//        if (!user.getVerified()) {
+//            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+//                    .body("Please verify your email before logging in");
+//        }
+//
+//        // Authenticate with email and raw password
+//        Authentication authentication = authenticationManager.authenticate(
+//                new UsernamePasswordAuthenticationToken(
+//                        loginRequest.getEmail(),
+//                        loginRequest.getPassword()));  // Use password from request
+//
+//        SecurityContextHolder.getContext().setAuthentication(authentication);
+//        String jwt = jwtUtil.generateJwtToken(loginRequest.getEmail());
+//
+//        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+//        UserDto userDto = userService.convertToDto(userDetails.getUser());
+//
+//        return ResponseEntity.ok(new JwtResponse(jwt, userDto));
+//    }
     @PostMapping("/login")
     public ResponseEntity<?> authenticateUser(@RequestBody UserDto loginRequest) {
-        // Check if user exists and is verified
-        User user = userService.findByEmail(loginRequest.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        try {
+            // Check if user exists
+            User user = userService.findByEmail(loginRequest.getEmail())
+                    .orElse(null);
 
-        if (!user.getVerified()) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body("Please verify your email before logging in");
+            if (user == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body("Email is not registered. Please register first.");
+            }
+
+            // Check if user is verified
+            if (!user.getVerified()) {
+                return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                        .body("Please verify your email before logging in");
+            }
+
+            // Authenticate with email and password
+            Authentication authentication = authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(
+                            loginRequest.getEmail(),
+                            loginRequest.getPassword()));
+
+            SecurityContextHolder.getContext().setAuthentication(authentication);
+            String jwt = jwtUtil.generateJwtToken(loginRequest.getEmail());
+
+            UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
+            UserDto userDto = userService.convertToDto(userDetails.getUser());
+
+            return ResponseEntity.ok(new JwtResponse(jwt, userDto));
+
+        } catch (org.springframework.security.authentication.BadCredentialsException e) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body("Invalid email or password");
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body("Login failed: " + e.getMessage());
         }
-
-        // Authenticate with email and raw password
-        Authentication authentication = authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(
-                        loginRequest.getEmail(),
-                        loginRequest.getPassword()));  // Use password from request
-
-        SecurityContextHolder.getContext().setAuthentication(authentication);
-        String jwt = jwtUtil.generateJwtToken(loginRequest.getEmail());
-
-        UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
-        UserDto userDto = userService.convertToDto(userDetails.getUser());
-
-        return ResponseEntity.ok(new JwtResponse(jwt, userDto));
     }
+
 
 
     // JWT Response DTO
