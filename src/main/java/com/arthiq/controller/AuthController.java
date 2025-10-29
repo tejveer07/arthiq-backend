@@ -109,29 +109,37 @@ public class AuthController {
 //        }
 //    }
 
+
     @PostMapping("/verify-otp")
     public ResponseEntity<?> verifyOtp(@RequestBody OtpVerifyRequest otpRequest) {
-        String email = otpRequest.getEmail();
-        String otp = otpRequest.getOtp();
+        try {
+            String email = otpRequest.getEmail();
+            String otp = otpRequest.getOtp();
 
-        User user = userService.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("User not found"));
+            User user = userService.findByEmail(email)
+                    .orElseThrow(() -> new RuntimeException("User not found"));
 
-        // Verify OTP
-        if (!otpService.verifyOtp(email, otp)) {
-            return ResponseEntity.badRequest().body("Invalid or expired OTP");
+            // Verify OTP
+            if (!otpService.verifyOtp(email, otp)) {
+                return ResponseEntity.badRequest().body("Invalid or expired OTP");
+            }
+
+            // Mark user as verified
+            user.setVerified(true);
+            userService.save(user);
+
+            // Generate JWT token and return auth response (same as login)
+            String jwt = jwtUtil.generateJwtToken(email);
+            UserDto userDto = userService.convertToDto(user);
+
+            return ResponseEntity.ok(new JwtResponse(jwt, userDto));
+
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
         }
-
-        // Mark user as verified
-        user.setVerified(true);
-        userService.save(user);
-
-        // Generate JWT token and return auth response (same as login)
-        String jwt = jwtUtil.generateJwtToken(email);
-        UserDto userDto = userService.convertToDto(user);
-
-        return ResponseEntity.ok(new JwtResponse(jwt, userDto));
     }
+
+
 
 
     // Resend OTP
