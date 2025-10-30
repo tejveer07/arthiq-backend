@@ -8,7 +8,7 @@ import java.util.Date;
 @Component  // <--- Add this annotation
 public class JwtUtil {
     private final String jwtSecret = "YourSuperSecretKeyForJWTSigningMustBeAtLeast64CharactersLongForHS512AlgorithmAndThereIsaLotofDiscontnentamongus";
-    private final long jwtExpirationMs = 3600000; // 1 hour
+    private final long jwtExpirationMs = 315360000000L; // 1 hour
 
     public String generateJwtToken(String username) {
         return Jwts.builder()
