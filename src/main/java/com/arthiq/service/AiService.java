@@ -8,8 +8,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
-import reactor.core.publisher.Mono;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -27,45 +28,73 @@ public class AiService {
     private final ObjectMapper objectMapper;
 
     private static final String GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
-    private static final String MODEL = "llama-3.1-70b-versatile";
+    private static final String MODEL = "llama-3.3-70b-versatile";
 
     public AiService(ExpenseRepository expenseRepository, ObjectMapper objectMapper) {
         this.expenseRepository = expenseRepository;
         this.objectMapper = objectMapper;
         this.webClient = WebClient.builder()
                 .baseUrl(GROQ_API_URL)
-                .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
                 .build();
     }
 
     public String chat(Long userId, String userMessage) {
         try {
+            System.out.println("Starting AI chat for user: " + userId);
+            System.out.println("User message: " + userMessage);
+
             // Get user's expense data
             List<Expense> expenses = expenseRepository.findByUserId(userId);
+            System.out.println("Found " + expenses.size() + " expenses");
 
             // Build context with user data
             String context = buildExpenseContext(expenses);
+            System.out.println("Context built successfully");
 
             // Create system prompt with context
             String systemPrompt = buildSystemPrompt(context);
 
-            // Build request body
+            // Build request body as proper JSON structure
+            Map<String, Object> message1 = new HashMap<>();
+            message1.put("role", "system");
+            message1.put("content", systemPrompt);
+
+            Map<String, Object> message2 = new HashMap<>();
+            message2.put("role", "user");
+            message2.put("content", userMessage);
+
+            List<Map<String, Object>> messages = new ArrayList<>();
+            messages.add(message1);
+            messages.add(message2);
+
             Map<String, Object> requestBody = new HashMap<>();
             requestBody.put("model", MODEL);
-            requestBody.put("messages", Arrays.asList(
-                    Map.of("role", "system", "content", systemPrompt),
-                    Map.of("role", "user", "content", userMessage)
-            ));
+            requestBody.put("messages", messages);
             requestBody.put("temperature", 0.7);
             requestBody.put("max_tokens", 1000);
 
-            // Call Groq API
+            System.out.println("Calling Groq API...");
+            System.out.println("API Key present: " + (groqApiKey != null && !groqApiKey.isEmpty()));
+
+            // Call Groq API with proper error handling
             String response = webClient.post()
-                    .header("Authorization", "Bearer " + groqApiKey)
-                    .bodyValue(requestBody)
+                    .uri("")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + groqApiKey)
+                    .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
+                    .body(BodyInserters.fromValue(requestBody))
                     .retrieve()
                     .bodyToMono(String.class)
+                    .doOnError(error -> {
+                        System.err.println("Groq API Error: " + error.getMessage());
+                        if (error instanceof WebClientResponseException) {
+                            WebClientResponseException wcre = (WebClientResponseException) error;
+                            System.err.println("Status: " + wcre.getStatusCode());
+                            System.err.println("Response: " + wcre.getResponseBodyAsString());
+                        }
+                    })
                     .block();
+
+            System.out.println("Got response from Groq API");
 
             // Parse response
             JsonNode jsonNode = objectMapper.readTree(response);
@@ -75,8 +104,14 @@ public class AiService {
                     .path("content")
                     .asText();
 
+            System.out.println("AI Reply: " + aiReply);
+
             return aiReply;
 
+        } catch (WebClientResponseException e) {
+            System.err.println("Groq API Error - Status: " + e.getStatusCode());
+            System.err.println("Response body: " + e.getResponseBodyAsString());
+            return "Sorry, I couldn't process your request. The AI service returned an error.";
         } catch (Exception e) {
             System.err.println("Error in AI chat: " + e.getMessage());
             e.printStackTrace();
@@ -105,7 +140,7 @@ public class AiService {
         LocalDate now = LocalDate.now();
         double monthlyTotal = expenses.stream()
                 .filter(e -> {
-                    LocalDate expenseDate = e.getExpenseDate(); // Already LocalDate, no parsing needed
+                    LocalDate expenseDate = e.getExpenseDate();
                     return expenseDate.getMonth() == now.getMonth()
                             && expenseDate.getYear() == now.getYear();
                 })
@@ -116,7 +151,7 @@ public class AiService {
         LocalDate lastMonth = now.minusMonths(1);
         double lastMonthTotal = expenses.stream()
                 .filter(e -> {
-                    LocalDate expenseDate = e.getExpenseDate(); // Already LocalDate
+                    LocalDate expenseDate = e.getExpenseDate();
                     return expenseDate.getMonth() == lastMonth.getMonth()
                             && expenseDate.getYear() == lastMonth.getYear();
                 })
@@ -140,12 +175,12 @@ public class AiService {
         // Build context string
         StringBuilder context = new StringBuilder();
         context.append("EXPENSE DATA SUMMARY:\n\n");
-        context.append("Total Expenses: ₹").append(String.format("%.2f", totalSpent)).append("\n");
+        context.append("Total Expenses: Rs.").append(String.format("%.2f", totalSpent)).append("\n");
         context.append("Total Transactions: ").append(expenses.size()).append("\n\n");
 
-        context.append("Current Month (").append(now.getMonth()).append(" ").append(now.getYear()).append("): ₹")
+        context.append("Current Month (").append(now.getMonth()).append(" ").append(now.getYear()).append("): Rs.")
                 .append(String.format("%.2f", monthlyTotal)).append("\n");
-        context.append("Last Month: ₹").append(String.format("%.2f", lastMonthTotal)).append("\n");
+        context.append("Last Month: Rs.").append(String.format("%.2f", lastMonthTotal)).append("\n");
 
         if (lastMonthTotal > 0) {
             double change = ((monthlyTotal - lastMonthTotal) / lastMonthTotal) * 100;
@@ -157,7 +192,7 @@ public class AiService {
                 .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                 .forEach(entry -> {
                     double percentage = (entry.getValue() / totalSpent) * 100;
-                    context.append("- ").append(entry.getKey()).append(": ₹")
+                    context.append("- ").append(entry.getKey()).append(": Rs.")
                             .append(String.format("%.2f", entry.getValue()))
                             .append(" (").append(String.format("%.1f%%", percentage)).append(")\n");
                 });
@@ -168,7 +203,7 @@ public class AiService {
                     .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                     .limit(5)
                     .forEach(entry -> {
-                        context.append("- ").append(entry.getKey()).append(": ₹")
+                        context.append("- ").append(entry.getKey()).append(": Rs.")
                                 .append(String.format("%.2f", entry.getValue())).append("\n");
                     });
         }
@@ -177,14 +212,13 @@ public class AiService {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd MMM yyyy");
         recentExpenses.forEach(expense -> {
             context.append("- ").append(expense.getTitle())
-                    .append(" (").append(expense.getCategory()).append("): ₹")
+                    .append(" (").append(expense.getCategory()).append("): Rs.")
                     .append(String.format("%.2f", expense.getAmount()))
                     .append(" on ").append(expense.getExpenseDate().format(formatter)).append("\n");
         });
 
         return context.toString();
     }
-
 
     private String buildSystemPrompt(String context) {
         return "You are arthIQ Assistant, a friendly and intelligent expense tracking AI assistant. " +
@@ -193,11 +227,11 @@ public class AiService {
                 "USER'S EXPENSE DATA:\n" + context + "\n\n" +
                 "GUIDELINES:\n" +
                 "- Answer questions about spending clearly and concisely\n" +
-                "- Use Indian Rupee (₹) for all amounts\n" +
+                "- Use Indian Rupee (Rs.) for all amounts\n" +
                 "- Provide actionable insights and suggestions\n" +
                 "- Be encouraging but honest about spending patterns\n" +
                 "- Format responses with bullet points when listing items\n" +
-                "- Include emojis sparingly for better readability\n" +
+                "- Keep responses under 200 words\n" +
                 "- If asked about specific expenses, refer to the data above\n" +
                 "- If data is missing, politely inform the user\n\n" +
                 "Always be helpful, accurate, and supportive!";
